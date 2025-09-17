@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"testing"
 	"time"
@@ -25,10 +26,10 @@ func provisionRecords(t *testing.T, provider *Provider, zone string, recordsToPr
 	}
 
 	if len(provisionedRecords) > 0 {
-		// Replace placeholder IDs of any existing records to test with a real ID from the provision
+		actualID := recordID(provisionedRecords[0])
 		for i, record := range recordsToTest {
-			if record.ID != "" {
-				recordsToTest[i].ID = provisionedRecords[0].ID
+			if recordID(record) != "" {
+				recordsToTest[i] = setRecordID(record, actualID)
 			}
 		}
 	}
@@ -67,23 +68,23 @@ func assertRecordListsEqual(t *testing.T, actual, expected []libdns.Record) {
 	}
 
 	for i := range expected {
-		if actual[i].ID == "" {
-			t.Fatalf("expected record ID to be present, but got nil")
+		actualRR := actual[i].RR()
+		expectedRR := expected[i].RR()
+
+		if recordID(actual[i]) == "" {
+			t.Fatalf("expected record ID to be present, but got empty for %s %s", actualRR.Type, actualRR.Name)
 		}
-		if actual[i].Type != expected[i].Type {
-			t.Fatalf("expected record Type %s, but got %s", expected[i].Type, actual[i].Type)
+		if actualRR.Type != expectedRR.Type {
+			t.Fatalf("expected record Type %s, but got %s", expectedRR.Type, actualRR.Type)
 		}
-		if actual[i].Name != expected[i].Name {
-			t.Fatalf("expected record Name %s, but got %s", expected[i].Name, actual[i].Name)
+		if actualRR.Name != expectedRR.Name {
+			t.Fatalf("expected record Name %s, but got %s", expectedRR.Name, actualRR.Name)
 		}
-		if actual[i].Value != expected[i].Value {
-			t.Fatalf("expected record Value %s, but got %s", expected[i].Value, actual[i].Value)
+		if actualRR.Data != expectedRR.Data {
+			t.Fatalf("expected record Data %s, but got %s", expectedRR.Data, actualRR.Data)
 		}
-		if actual[i].TTL != expected[i].TTL {
-			t.Fatalf("expected record TTL %v, but got %v", expected[i].TTL, actual[i].TTL)
-		}
-		if actual[i].Priority != expected[i].Priority {
-			t.Fatalf("expected record Priority %d, but got %d", expected[i].Priority, actual[i].Priority)
+		if actualRR.TTL != expectedRR.TTL {
+			t.Fatalf("expected record TTL %v, but got %v", expectedRR.TTL, actualRR.TTL)
 		}
 	}
 }
@@ -98,20 +99,17 @@ func TestGetRecords(t *testing.T) {
 		"Success": {
 			zone: envZone + ".",
 			recordsToProvision: []libdns.Record{
-				{
-					Type:  "A",
-					Name:  "example.com",
-					Value: "127.0.0.1",
-					TTL:   time.Duration(300) * time.Second,
+				libdns.Address{
+					Name: "example.com",
+					TTL:  300 * time.Second,
+					IP:   netip.MustParseAddr("127.0.0.1"),
 				},
 			},
 			expectedRecords: []libdns.Record{
-				{
-					Type:     "A",
-					Name:     "example.com",
-					Value:    "127.0.0.1",
-					TTL:      time.Duration(300) * time.Second,
-					Priority: 0,
+				libdns.Address{
+					Name: "example.com",
+					TTL:  300 * time.Second,
+					IP:   netip.MustParseAddr("127.0.0.1"),
 				},
 			},
 		},
@@ -144,29 +142,25 @@ func TestAppendRecords(t *testing.T) {
 		"Success": {
 			zone: envZone + ".",
 			recordsToAdd: []libdns.Record{
-				{
-					Type:  "CNAME",
-					Name:  "test",
-					Value: "test",
+				libdns.CNAME{
+					Name:   "test",
+					Target: "test",
 				},
 			},
 			expectedRecords: []libdns.Record{
-				{
-					Type:  "CNAME",
-					Name:  "test",
-					Value: "test." + envZone,
-					TTL:   time.Duration(0) * time.Second,
+				libdns.CNAME{
+					Name:   "test",
+					Target: "test." + envZone,
 				},
 			},
 		},
 		"API Error": {
 			zone: "_",
 			recordsToAdd: []libdns.Record{
-				{
-					Type:  "CNAME",
-					Name:  "test",
-					Value: "test",
-					TTL:   time.Duration(300) * time.Second,
+				libdns.CNAME{
+					Name:   "test",
+					Target: "test",
+					TTL:    300 * time.Second,
 				},
 			},
 			expectedErr: errUnexpectedStatusCode,
@@ -195,51 +189,44 @@ func TestSetRecords(t *testing.T) {
 		"Success": {
 			zone: envZone + ".",
 			recordsToProvision: []libdns.Record{
-				{
-					Type:  "A",
-					Name:  "testrecord.com",
-					Value: "0.0.0.0",
-					TTL:   time.Duration(300) * time.Second,
+				libdns.Address{
+					Name: "testrecord.com",
+					TTL:  300 * time.Second,
+					IP:   netip.MustParseAddr("0.0.0.0"),
 				},
 			},
 			recordsToSet: []libdns.Record{
-				{
-					ID:    "existingrecord", // here we test changing the type and value of the existing record
-					Type:  "TXT",
-					Name:  "testrecord.com",
-					Value: "hello",
-					TTL:   time.Duration(300) * time.Second,
-				},
-				{
-					Type:  "A",
-					Name:  "newrecord.com",
-					Value: "0.0.0.0",
-					TTL:   time.Duration(300) * time.Second,
+				setRecordID(libdns.TXT{
+					Name: "testrecord.com",
+					TTL:  300 * time.Second,
+					Text: "hello",
+				}, "existingrecord"),
+				libdns.Address{
+					Name: "newrecord.com",
+					TTL:  300 * time.Second,
+					IP:   netip.MustParseAddr("0.0.0.0"),
 				},
 			},
 			expectedRecords: []libdns.Record{
-				{
-					Type:  "TXT",
-					Name:  "testrecord.com",
-					Value: "hello",
-					TTL:   time.Duration(300) * time.Second,
+				libdns.TXT{
+					Name: "testrecord.com",
+					TTL:  300 * time.Second,
+					Text: "hello",
 				},
-				{
-					Type:  "A",
-					Name:  "newrecord.com",
-					Value: "0.0.0.0",
-					TTL:   time.Duration(300) * time.Second,
+				libdns.Address{
+					Name: "newrecord.com",
+					TTL:  300 * time.Second,
+					IP:   netip.MustParseAddr("0.0.0.0"),
 				},
 			},
 		},
 		"API Error": {
 			zone: "_",
 			recordsToSet: []libdns.Record{
-				{
-					Type:  "A",
-					Name:  "newrecord.com",
-					Value: "0.0.0.0",
-					TTL:   time.Duration(300) * time.Second,
+				libdns.Address{
+					Name: "newrecord.com",
+					TTL:  300 * time.Second,
+					IP:   netip.MustParseAddr("0.0.0.0"),
 				},
 			},
 			expectedErr: errUnexpectedStatusCode,
@@ -270,35 +257,31 @@ func TestDeleteRecords(t *testing.T) {
 		"Success": {
 			zone: envZone + ".",
 			recordsToProvision: []libdns.Record{
-				{
-					Type:  "A",
-					Name:  "testrecord.com",
-					Value: "0.0.0.0",
-					TTL:   time.Duration(300) * time.Second,
+				libdns.Address{
+					Name: "testrecord.com",
+					TTL:  300 * time.Second,
+					IP:   netip.MustParseAddr("0.0.0.0"),
 				},
 			},
 			recordsToDelete: []libdns.Record{
-				{
-					ID:   "existingrecord",
-					Type: "A",
+				setRecordID(libdns.Address{
 					Name: "testrecord.com",
-				},
+					IP:   netip.MustParseAddr("0.0.0.0"),
+				}, "existingrecord"),
 			},
 			expectedRecords: []libdns.Record{
-				{
-					Type: "A",
+				libdns.Address{
 					Name: "testrecord.com",
+					IP:   netip.MustParseAddr("0.0.0.0"),
 				},
 			},
 		},
 		"API Error": {
 			zone: "_",
 			recordsToDelete: []libdns.Record{
-				{
-					ID:   "existingrecord",
-					Type: "A",
+				setRecordID(libdns.Address{
 					Name: "example.com",
-				},
+				}, "existingrecord"),
 			},
 			expectedErr: errUnexpectedStatusCode,
 		},

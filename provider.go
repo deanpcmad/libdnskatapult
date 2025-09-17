@@ -14,7 +14,10 @@ type Provider struct {
 	APIToken string `json:"api_token,omitempty"`
 }
 
-var errFailedToDeleteRecord = errors.New("failed to delete record")
+var (
+	errFailedToDeleteRecord = errors.New("failed to delete record")
+	errMissingRecordID      = errors.New("record id is required")
+)
 
 // GetRecords lists all the records in the zone.
 func (p *Provider) GetRecords(ctx context.Context, zone string) ([]libdns.Record, error) {
@@ -69,11 +72,11 @@ func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns
 		var url string
 		var method string
 
-		if record.ID == "" {
+		if id := recordID(record); id == "" {
 			url = "/dns_zones/_/records"
 			method = http.MethodPost
 		} else {
-			url = "/dns_records/" + record.ID
+			url = "/dns_records/" + id
 			method = http.MethodPatch
 		}
 
@@ -103,7 +106,13 @@ func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []lib
 	var deletedRecords []libdns.Record
 
 	for _, record := range records {
-		url := "/dns_records/" + record.ID
+		recID := recordID(record)
+		if recID == "" {
+			rr := record.RR()
+			return deletedRecords, fmt.Errorf("%w: type %s, name %s", errMissingRecordID, rr.Type, rr.Name)
+		}
+
+		url := "/dns_records/" + recID
 
 		var apiResponse DeletionAPIResponse
 		if err := p.DoRequest(ctx, http.MethodDelete, url, nil, &apiResponse); err != nil {
@@ -113,7 +122,7 @@ func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []lib
 		if apiResponse.Deleted {
 			deletedRecords = append(deletedRecords, record)
 		} else {
-			return deletedRecords, fmt.Errorf("%w: %s", errFailedToDeleteRecord, record.ID)
+			return deletedRecords, fmt.Errorf("%w: %s", errFailedToDeleteRecord, recID)
 		}
 	}
 
