@@ -1,2 +1,4 @@
+github.com/libdns/katapult v1.0.0 h1:lYOUmW81UiEWH+xzt+22qtPDQ1we8iO8Ujpq3W/oX+o=
+github.com/libdns/katapult v1.0.0/go.mod h1:YF87qwSahybQMXXs+WUsGeD/Pkj0lBskbEAmhTT+o8k=
 github.com/libdns/libdns v1.1.1 h1:wPrHrXILoSHKWJKGd0EiAVmiJbFShguILTg9leS/P/U=
 github.com/libdns/libdns v1.1.1/go.mod h1:4Bj9+5CQiNMVGf87wjX4CY3HQJypUHRuLvlsfsZqLWQ=
