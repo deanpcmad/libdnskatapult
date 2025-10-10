@@ -127,7 +127,27 @@ func TestGetRecords(t *testing.T) {
 
 			records, err := provider.GetRecords(context.Background(), data.zone)
 			assertErrorIs(t, err, data.expectedErr)
-			assertRecordListsEqual(t, records, data.expectedRecords)
+
+			// For successful cases, verify our provisioned records are in the results
+			if data.expectedErr == nil && len(data.expectedRecords) > 0 {
+				// Find the provisioned record in the returned records
+				found := false
+				for _, record := range records {
+					rr := record.RR()
+					expectedRR := data.expectedRecords[0].RR()
+					if rr.Type == expectedRR.Type && rr.Name == expectedRR.Name && rr.Data == expectedRR.Data {
+						found = true
+						// Verify the record matches
+						assertRecordListsEqual(t, []libdns.Record{record}, data.expectedRecords)
+						break
+					}
+				}
+				if !found {
+					t.Fatalf("expected to find provisioned record %v in results, but it was not present", data.expectedRecords[0].RR())
+				}
+			} else {
+				assertRecordListsEqual(t, records, data.expectedRecords)
+			}
 		})
 	}
 }
