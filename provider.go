@@ -128,8 +128,6 @@ func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []lib
 			return deletedRecords, fmt.Errorf("%w: type %s, name %s", errMissingRecordID, rr.Type, rr.Name)
 		}
 
-		fmt.Println("Deleting record ID:", recID)
-
 		url := "/dns_records/" + recID
 
 		var apiResponse DeletionAPIResponse
