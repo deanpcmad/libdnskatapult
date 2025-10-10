@@ -105,12 +105,30 @@ func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns
 func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []libdns.Record) ([]libdns.Record, error) {
 	var deletedRecords []libdns.Record
 
+	// Fetch existing records to get their IDs
+	existingRecords, err := p.GetRecords(ctx, zone)
+	if err != nil {
+		return deletedRecords, err
+	}
+
 	for _, record := range records {
-		recID := recordID(record)
+		rr := record.RR()
+
+		// Find matching record from existing records
+		var recID string
+		for _, existing := range existingRecords {
+			existingRR := existing.RR()
+			if existingRR.Type == rr.Type && existingRR.Name == rr.Name && existingRR.Data == rr.Data {
+				recID = recordID(existing)
+				break
+			}
+		}
+
 		if recID == "" {
-			rr := record.RR()
 			return deletedRecords, fmt.Errorf("%w: type %s, name %s", errMissingRecordID, rr.Type, rr.Name)
 		}
+
+		fmt.Println("Deleting record ID:", recID)
 
 		url := "/dns_records/" + recID
 
